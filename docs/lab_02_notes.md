@@ -1,0 +1,3 @@
+# Lab 02 Notes
+
+The cleaning process removed negative prices, duplicate records, duplicate IDs, and invalid dates because these values violated the defined data-quality rules. Missing market values were replaced with `Unknown`, while inconsistent commodity representations such as `MAIZE` and `Maize` were normalized to a common format. A value was treated as an error when it violated an explicit validation rule, while an outlier would be considered an unusual but potentially valid observation. If this dataset were later used for prediction, leakage would occur if information from the future or from the prediction target were used to construct features or influence the training process.
