@@ -60,6 +60,7 @@ try:
 
     print("Success! the DataFrame has returned succcessfully")
     print(f"\nSource B data First few rows: \n{source_b_df.head()}")
+    print(f"\nSource B data Last few rows: \n{source_b_df.tail()}")
     print(f"\nSource B data shape: {source_b_df.shape}")
     print(f"\nRecord count {source_b_df["market"].value_counts()}")
 except Exception as e:
