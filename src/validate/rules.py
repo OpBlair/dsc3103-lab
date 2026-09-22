@@ -67,3 +67,9 @@ def rule_known_commodity(df):
     unknown_row["Reason"] = "Unknown Commodity"
 
     return unknown_row
+
+def rule_negative_rain(df):
+    neg_rainfall = df[df["rainfall_mm"] < 0].copy()
+    neg_rainfall["Reason"]="Negative Rainfall"
+    return neg_rainfall
+
