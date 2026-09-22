@@ -1,7 +1,9 @@
 import requests
 import pandas as pd
+import os
+import time
 from src.common.config import (
-    SOURCE_A_RAW_PATH,
+    SOURCE_B_RAW_PATH,
     MARKET_COORDS,
     RAINFALL_START_DATE,
     RAINFALL_END_DATE,
@@ -29,21 +31,25 @@ def get_market_rainfall(market_name, latitude, longitude, start_date=RAINFALL_ST
     df = pd.DataFrame({
         "date":daily["time"],
         "market":market_name,
-        "rainfall":daily["precipitation_sum"]
+        "rainfall_mm":daily["precipitation_sum"]
     })
 
     return df
 
-def ingest_source_b():
-    all_dfs = []
+def get_all_market_rain():
+    all_market_rain = []
 
     for market_name, (lat, lon) in MARKET_COORDS.items():
-        try:
-            market_df = get_market_rainfall(market_name, lat, lon)
-            all_dfs.append(market_df)
-        except Exception as e:
-            print(f"Skipping {market_name} due an error {e}")
+        market_rain = get_market_rainfall(market_name, lat, lon)
+        all_market_rain.append(market_rain)
+        time.sleep(5)
 
-    if all_dfs:
-        return pd.concat(all_dfs, ignore_index=True)
-    return pd.DataFrame()
+    return pd.concat(all_market_rain)
+
+def ingest_source_b(path=SOURCE_B_RAW_PATH):
+    if os.path.exists(path):
+        return pd.read_csv(path)
+
+    df_b = get_all_market_rain()
+    df_b.to_csv(path, index=False)
+    return df_b
