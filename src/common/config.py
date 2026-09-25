@@ -1,6 +1,8 @@
 SOURCE_A_RAW_PATH = "data/raw/prices.csv"
 SOURCE_B_RAW_PATH = "data/raw/rainfall.csv"
 PROCESSED_DATA_PATH = "data/processed/final_merged.parquet"
+RAW_JOINED_PATH = "data/processed/prices_with_rainfall.parquet"
+DB_PATH = "data/processed/analytics.duckdb"
 
 MARKET_COORDS = {
     "Mukono": (0.3533, 32.7553),
