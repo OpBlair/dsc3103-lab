@@ -1,0 +1,19 @@
+services:
+  airflow:
+    image: apache/airflow:3.3.2-python3.10
+    container_name: dsc3103_airflow
+    user: '1000:0'
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
+      AIRFLOW__AUTH_MANAGER__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+      _PIP_ADDITIONAL_REQUIREMENTS: "duckdb pandas"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags:z
+      - ./src:/opt/airflow/src:z
+      - ./data:/opt/airflow/data:z
+    command: standalone
