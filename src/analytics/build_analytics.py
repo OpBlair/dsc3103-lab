@@ -42,7 +42,7 @@ def build_star_schema():
     duckdb_conn.execute("CREATE OR REPLACE TABLE fact_price_observation AS SELECT * FROM fact_df")
 
     print(f"\n==== Step 3: Star Schema Built ====")
-    print(f"Fact Table row count: {duckdb_conn.sql("SELECT COUNT(*) FROM fact_price_observation").fetchone()[0]}")
+    print(f"Fact Table row count: {duckdb_conn.sql('SELECT COUNT(*) FROM fact_price_observation').fetchone()[0]}")
     duckdb_conn.close()
 
 def run_analytical_queries():
