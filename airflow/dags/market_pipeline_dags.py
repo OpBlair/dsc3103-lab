@@ -1,4 +1,5 @@
 import sys
+import pandas as pd
 
 if '/opt/airflow/' not in sys.path:
     sys.path.insert(0, '/opt/airflow')
@@ -42,14 +43,18 @@ with DAG(
 
     @task
     def merge(clean_result: dict, acquire_b_result: dict):
-        merged_df = merge_data(clean_result["path"], acquire_b_result["path"])
-        merged_df.to_parquet(JOINED_OUTPUT_PATH, index=False)
-        return {"path": JOINED_OUTPUT_PATH, "rows": len(merged_df)}
+        clean_df = pd.read_parquet(clean_result["path"])
+        rainfall = ingest_source_b(acquire_b_result["path"])
+
+        merged_data = merge_data(clean_df, rainfall)
+        merged_data.to_parquet(JOINED_OUTPUT_PATH, index=False)
+
+        return {"path": JOINED_OUTPUT_PATH, "rows": len(merged_data)}
 
     @task
     def store(merge_result: dict):
-        build_star_schema(merge_result["path"])
-        return "Star schema successfully built and stored."
+        build_star_schema()
+        return {"Status:": "Star schema successfully built and stored."}
 
     @task
     def report():
