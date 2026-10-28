@@ -5,7 +5,7 @@ if '/opt/airflow/' not in sys.path:
     sys.path.insert(0, '/opt/airflow')
 
 from airflow.sdk import DAG, task
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from src.ingest.source_a import ingest_source_a
 from src.ingest.source_b import ingest_source_b
@@ -25,23 +25,25 @@ with DAG(
     catchup = False,
 ):
 
-    @task
+    # 1. Ingestion: Aggressive retries + exponential backoff for flaky external sources/networks
+    @task(retries=4, retry_delay=timedelta(seconds=30), retry_exponential_backoff=True, max_retry_delay=timedelta(minutes=10))
     def acquire_a():
         df = ingest_source_a(SOURCE_A_RAW_PATH)
         return {"path":SOURCE_A_RAW_PATH, "rows": len(df)}
 
-    @task
+    @task(retries=4, retry_delay=timedelta(seconds=30), retry_exponential_backoff=True, max_retry_delay=timedelta(minutes=10))
     def acquire_b():
         df = ingest_source_b(SOURCE_B_RAW_PATH)
         return {"path":SOURCE_B_RAW_PATH, "rows": len(df)}
 
-    @task
+    # 2. Transformation: Moderate retries for local file IO / pandas operations
+    @task(retries=2, retry_delay=timedelta(minutes=2))
     def clean(acquire_a_result: dict):
         clean_df, log = clean_data(acquire_a_result["path"])
         clean_df.to_parquet(CLEAN_OUTPUT_PATH, index=False)
         return {"path": CLEAN_OUTPUT_PATH, "rows": len(clean_df), "rules_triggered": len(log)}
 
-    @task
+    @task(retries=2, retry_delay=timedelta(minutes=2))
     def merge(clean_result: dict, acquire_b_result: dict):
         clean_df = pd.read_parquet(clean_result["path"])
         rainfall = ingest_source_b(acquire_b_result["path"])
@@ -51,12 +53,14 @@ with DAG(
 
         return {"path": JOINED_OUTPUT_PATH, "rows": len(merged_data)}
 
-    @task
+    # 3. Storage / Database: Low retries (Ensure build_star_schema is idempotent!)
+    @task(retries=1, retry_delay=timedelta(minutes=1))
     def store(merge_result: dict):
         build_star_schema()
         return {"Status:": "Star schema successfully built and stored."}
 
-    @task
+    # 4. Reporting: Safe to retry, light read-only check
+    @task(retries=2, retry_delay=timedelta(seconds=15))
     def report():
         duckdb_conn = duckdb.connect(DB_PATH)
         row_count = duckdb_conn.sql("SELECT COUNT(*) FROM fact_price_observation").fetchone()[0]
@@ -74,4 +78,3 @@ with DAG(
     store_res = store(merge_res)
 
     store_res >> report()
-
