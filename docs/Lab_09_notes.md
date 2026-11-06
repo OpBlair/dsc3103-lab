@@ -76,4 +76,131 @@ Here is the complete guide and notes for **Step 8**, formatted with markdown ast
 * **Use Case:** High-frequency algorithmic trading, automated stop-loss execution, real-time fraud detection, or instantaneous consumer price alert systems.
 * **Why:** When business operations rely on immediate reactions where a delay of even a few minutes can result in severe financial loss or missed risk mitigation.
 
+---
 
+## **Step 2 Question**
+
+* **What problem does sharing `make_features` prevent?**
+It prevents **training–serving skew**, a discrepancy where the data preprocessing logic used during model training differs from the preprocessing logic applied to live requests in production.
+
+* **What would happen if the API had its own copy?**
+If the API maintained a separate copy of the feature engineering code, any minor update, bug fix, or accidental change to one copy (e.g., altering one-hot encoding columns, default missing-value handling, or column ordering) would instantly cause a mismatch. The model would receive features it wasn't trained to interpret, leading to **silent failure, corrupted predictions, or runtime exceptions**.
+
+## **Step 4 Answers**
+
+1. **Which data was this model trained on?**
+* **`training_data_sha256`** (along with `n_training_rows`). The SHA-256 hash gives a cryptographically unique fingerprint of the exact parquet dataset file used, proving precisely which version of the training data generated the weights.
+
+2. **Which model is serving right now?**
+* **`model_version`** (timestamp `20261102-044416`) and **`model_type`** (`LinearRegression`). The version string allows monitoring tools and logs to instantly track which deployed iteration is actively answering inference requests.
+
+## **Step 7 answers**
+| Request | Status | Message |
+|---|---|---|
+| `rainfall_mm` = -5 | 422 | Input should be greater than or equal to 0 |
+| `market` = "Narnia" | 422 | Input should be 'Owino', 'Nakasero', 'Kalerwe', 'Mbale Central', 'Gulu Main' or 'Unknown' |
+| `date` = "not-a-date" | 422 | Input should be a valid date or datetime, invalid character in year |
+
+
+#### **Question:** Why a 422 better than a 500, or than returning a prediction anyway?
+
+* **A 422 (Unprocessable Entity)** explicitly and cleanly tells the client *what* is wrong with their input right at the API boundary before any heavy code runs.
+* **A 500 (Internal Server Error)** indicates a raw server crash or unhandled exception, which is bad practice because it hides the real validation problem and leaks internal stack traces.
+* **Returning a prediction anyway** with garbage or invalid input would cause a **silent failure** ("garbage in, garbage out"), giving the user a fake, meaningless price without any warning that their request was broken.
+
+## **Step 8: Training-serving skew**
+
+1. {
+    "predicted_price": -6577.1,
+    "model_version": "20261102-044416"
+    }
+
+2. {
+    "predicted_price": 3682.27,
+    "model_version": "20261102-044416"
+    }
+
+* **Did the service crash?**
+* **No.** The API returned an HTTP 200 OK successfully. This highlights the danger of **silent failures**, the system looks healthy on the outside, but its internal logic is corrupted.
+
+
+* **Did the prediction change?**
+* **Yes.** Because the input features were divided by 1000 without the model weights being retrained to match, the model interpreted the rainfall entirely wrong, resulting in a distorted, incorrect price prediction.
+
+
+* **What does this tell you about why `/health` should report the model version?**
+* It ensures transparency. While `/health` confirms the service is running, adding version and metadata tracking lets monitoring tools verify that the deployed code and model artifact match expectations.
+
+
+* **What additional field could you add to the metadata to detect a feature-code change?**
+* A **`features_code_sha256`** hash. If a checksum of `features.py` is computed during training and stored in `model_metadata.json`, the API startup script could compare it against the current file hash and instantly flag or notify engineers of a change in feature.
+
+---
+
+## **Step 10 (Containerization)**
+
+#### **Questions**
+
+1. **Why must the scikit-learn version in the image match the one that trained the model?**
+* Joblib/pickle serialization stores internal object states and structural bindings tied directly to the exact scikit-learn version. If versions mismatch, deserialization can fail or produce silent numerical drift/errors.
+
+
+2. **Why is `data/` left out of the image?**
+* The dataset is massive, changes frequently, and is only needed for *training* (`train.py`), not for live *inference*. Keeping raw data out of the production container keeps image size lightweight and secure.
+
+## **Step 11: Reproducibility**
+```bash
+# 1. Run the container and test initial output
+$ sudo docker run -d --name price -p 8000:8000 price-service
+c1269cf7dbdcf03cbc1978210926256cf94be963b1ae63b73f08ebd130d02119
+
+$ python -m src.api.test_client
+--- health: HTTP 200
+{'status': 'ok', 'model_version': '20261102-044416', 'model_type': 'LinearRegression'}
+--- predict (valid): HTTP 200
+{'predicted_price': 3028.56, 'model_version': '20261102-044416'}
+--- predict (invalid): HTTP 422
+{'detail': [{'type': 'literal_error', 'loc': ['body', 'market'], ...}]}
+
+# 2. Restart container and re-run client
+$ sudo docker restart price
+price
+
+$ python -m src.api.test_client
+--- health: HTTP 200
+{'status': 'ok', 'model_version': '20261102-044416', 'model_type': 'LinearRegression'}
+--- predict (valid): HTTP 200
+{'predicted_price': 3028.56, 'model_version': '20261102-044416'}
+--- predict (invalid): HTTP 422
+{'detail': [{'type': 'literal_error', 'loc': ['body', 'market'], ...}]}
+
+Look at that output—both predictions returned exactly `3028.56` before and after the container restart, proving 100% reproducibility via containerization!
+
+Here is the markdown block you can drop directly into your `docs/Lab_9_notes.md` (or `docs/Lab_09_notes.md`) file to capture Step 11 and Step 12 cleanly.
+```
+---
+
+**Observation:** The predicted price is **identical** (`3028.56`) before and after restarting the container. This proves that the environment, dependencies, code, and model weights are completely encapsulated and deterministic within the Docker image.
+
+---
+
+### **Step 12 Answers**
+
+1. **Where does preprocessing happen at inference time?**
+* Preprocessing happens directly inside the `/predict` API endpoint by importing and executing the centralized `make_features()` function on incoming request payloads.
+
+
+2. **How does your design prevent training–serving skew? Which Step showed it can still happen and how?**
+* Using a single, shared `make_features()` module for both training and inference guarantees identical transformation logic. Step 8 demonstrated that skew can still happen if someone modifies preprocessing parameters or units (e.g., changing rainfall divisors) without retraining the model, resulting in silent prediction drift.
+
+
+3. **What should `/health` prove?**
+* It should prove that the service is up and running while exposing key metadata fields (`model_version` and `model_type`) so clients and monitoring tools can verify exactly which model artifact is actively handling live traffic.
+
+
+4. **Which information belongs with a model version, and why?**
+* Information such as training data hashes (`training_data_sha256`), feature schema lists, model metrics (`train_r2`), and training row counts belong with the version because they establish an immutable lineage, audit trail, and guarantee reproducibility.
+
+
+5. **When would batch inference be a better choice than this API for market prices?**
+* Batch inference is better for bulk operations like generating end-of-day commodity price reports, populating data warehouses, or running heavy analytical dashboards where sub-second real-time response latency is unnecessary.
