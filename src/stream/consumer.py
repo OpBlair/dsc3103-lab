@@ -41,9 +41,7 @@ def consume():
             event = json.loads(line)
             now = time.time()
 
-            # TODO A (duplicates): if event["event_id"] is already in seen_ids,
-            #   write the event to DUP_LOG with append() and skip it (continue).
-            #   Otherwise add its id to seen_ids.
+            # (duplicates)
             if event["event_id"] in seen_ids:
                 append(DUP_LOG, event)
                 continue
@@ -51,28 +49,22 @@ def consume():
             
             ws = window_start(event["event_time"])
             
-            # TODO B (late data): the event is LATE if its window is already in
-            #   "finalised", OR if now >= ws + WINDOW + WATERMARK.
-            #   Write late events to LATE_LOG with a "reason" field and skip them.
+            # (late data)
             if ws in finalised or now >= ws + WINDOW + WATERMARK:
                 reason = "finalised" if ws in finalised else "watermark exceeded"
                 late_event = {**event, "reason": reason}
                 append(LATE_LOG, late_event)
                 continue
 
-            # TODO C (windowing): add the event to windows[ws]:
-            #   increase "n" by 1 and "total" by the event's price.
-            #   Hint: windows.setdefault(ws, {"n": 0, "total": 0.0})
+            # (windowing)
             w = windows.setdefault(ws, {"n": 0, "total": 0.0})
             w["n"] += 1
             w["total"] += event["price"]
 
-        # 3. finalise windows whose end + watermark has passed
+        # finalise windows whose end + watermark has passed
         now = time.time()
         for ws in sorted(windows):
-            # TODO D (output): if ws is not finalised and
-            #   now >= ws + WINDOW + WATERMARK, print the window's start time,
-            #   event count and mean price, then add ws to "finalised".
+            # (output)
             if ws not in finalised and now >= ws + WINDOW + WATERMARK:
                 w = windows[ws]
                 mean_price = w["total"] / w["n"] if w["n"] > 0 else 0.0
